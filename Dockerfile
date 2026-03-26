@@ -3,8 +3,8 @@ FROM docker.io/cloudflare/sandbox:0.7.20
 # Install Node.js 22 (required by OpenClaw)
 # The base image has Node 20, we need to replace it with Node 22
 # Using direct binary download for reliability
-<<<<<<< HEAD
 # Note: rclone is no longer needed — persistence uses Sandbox SDK backup/restore API
+<<<<<<< HEAD
 =======
 >>>>>>> 9fe67fd (fix: use Node 22.22.1 (22.22.2 npm broken in container))
 ENV NODE_VERSION=22.22.1
@@ -16,6 +16,8 @@ RUN ARCH="$(dpkg --print-architecture)" \
        esac \
     && apt-get update && apt-get install -y xz-utils ca-certificates \
     && rm -rf /usr/local/lib/node_modules /usr/local/bin/node /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+=======
+>>>>>>> fb31138 (fix: remove old Node 20 before installing Node 22)
     && curl -fsSLk https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o /tmp/node.tar.xz \
     && rm -rf /usr/local/lib/node_modules /usr/local/bin/node /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
     && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \
