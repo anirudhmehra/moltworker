@@ -268,20 +268,6 @@ app.all('*', async (c) => {
   // Ensure gateway is running (this will wait for startup)
   try {
     await ensureGateway(sandbox, c.env);
-
-    // Schedule a snapshot after gateway startup settles (non-blocking).
-    // This captures the initial config/workspace state for persistence.
-    c.executionCtx.waitUntil(
-      (async () => {
-        // Wait 30s for the gateway to write initial state
-        await new Promise((r) => setTimeout(r, 30_000));
-        try {
-          await createSnapshot(sandbox, c.env.BACKUP_BUCKET);
-        } catch (err) {
-          console.error('[snapshot] Post-startup snapshot failed:', err);
-        }
-      })(),
-    );
   } catch (error) {
     console.error('[PROXY] Failed to start gateway:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
