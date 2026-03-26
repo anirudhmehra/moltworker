@@ -83,9 +83,6 @@ export async function createSnapshot(
     await bucket.delete(`backups/${previousHandle.id}/meta.json`);
   }
 
-  // Fix permissions — openclaw may create restrictive config files
-  await sandbox.exec(`chmod -R a+rX ${BACKUP_DIR}`);
-
   console.log('[persistence] Creating backup...');
   const t0 = Date.now();
   const handle = await sandbox.createBackup({
