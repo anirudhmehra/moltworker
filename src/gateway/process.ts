@@ -4,6 +4,25 @@ import { MOLTBOT_PORT, STARTUP_TIMEOUT_MS } from '../config';
 import { buildEnvVars } from './env';
 import { ensureRcloneConfig } from './r2';
 
+const STARTUP_LOG_FILE = '/tmp/start-openclaw.log';
+
+function tailLog(log: string, maxLength = 4000): string {
+  if (log.length <= maxLength) return log;
+  return `…${log.slice(-maxLength)}`;
+}
+
+async function readStartupLogTail(sandbox: Sandbox, maxLength = 4000): Promise<string> {
+  try {
+    const result = await sandbox.exec(
+      `test -f ${STARTUP_LOG_FILE} && tail -c ${maxLength} ${STARTUP_LOG_FILE} || true`,
+    );
+    return result.stdout || '';
+  } catch (error) {
+    console.error('[Gateway] Failed to read startup log file:', error);
+    return '';
+  }
+}
+
 /**
  * Find an existing OpenClaw gateway process
  *
@@ -118,17 +137,28 @@ export async function ensureMoltbotGateway(sandbox: Sandbox, env: MoltbotEnv): P
     if (logs.stderr) console.log('[Gateway] stderr:', logs.stderr);
   } catch (e) {
     console.error('[Gateway] waitForPort failed:', e);
+
+    let stdout = '';
+    let stderr = '';
     try {
       const logs = await process.getLogs();
-      console.error('[Gateway] startup failed. Stderr:', logs.stderr);
-      console.error('[Gateway] startup failed. Stdout:', logs.stdout);
-      throw new Error(`OpenClaw gateway failed to start. Stderr: ${logs.stderr || '(empty)'}`, {
-        cause: e,
-      });
+      stdout = logs.stdout || '';
+      stderr = logs.stderr || '';
+      console.error('[Gateway] startup failed. Stderr:', stderr);
+      console.error('[Gateway] startup failed. Stdout:', stdout);
     } catch (logErr) {
       console.error('[Gateway] Failed to get logs:', logErr);
-      throw e;
     }
+
+    const refreshedStatus = process.getStatus ? await process.getStatus().catch(() => process.status) : process.status;
+    const startupLog = await readStartupLogTail(sandbox);
+
+    throw new Error(
+      `OpenClaw gateway failed to start before port ${MOLTBOT_PORT} became ready. ` +
+        `Process status: ${refreshedStatus}. Exit code: ${process.exitCode ?? 'unknown'}. ` +
+        `Stderr: ${tailLog(stderr) || '(empty)'}\nStdout: ${tailLog(stdout) || '(empty)'}${startupLog ? `\nStartup log: ${tailLog(startupLog)}` : ''}`,
+      { cause: e },
+    );
   }
 
   // Verify gateway is actually responding

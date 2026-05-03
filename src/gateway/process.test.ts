@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { findExistingMoltbotProcess } from './process';
+import { findExistingMoltbotProcess, ensureMoltbotGateway } from './process';
 import type { Sandbox, Process } from '@cloudflare/sandbox';
-import { createMockSandbox } from '../test-utils';
+import { createMockEnv, createMockSandbox, suppressConsole } from '../test-utils';
 
 function createFullMockProcess(overrides: Partial<Process> = {}): Process {
   return {
@@ -12,7 +12,9 @@ function createFullMockProcess(overrides: Partial<Process> = {}): Process {
     endTime: undefined,
     exitCode: undefined,
     waitForPort: vi.fn(),
+    waitForExit: vi.fn(),
     kill: vi.fn(),
+    getStatus: vi.fn().mockResolvedValue(overrides.status ?? 'running'),
     getLogs: vi.fn().mockResolvedValue({ stdout: '', stderr: '' }),
     ...overrides,
   } as Process;
@@ -141,5 +143,55 @@ describe('findExistingMoltbotProcess', () => {
 
     const result = await findExistingMoltbotProcess(sandbox);
     expect(result).toBeNull();
+  });
+});
+
+describe('ensureMoltbotGateway', () => {
+  it('includes startup logs when waiting for the gateway port times out', async () => {
+    suppressConsole();
+
+    const process = createFullMockProcess({
+      id: 'new-gateway',
+      command: '/usr/local/bin/start-openclaw.sh',
+      status: 'starting',
+      waitForPort: vi.fn().mockRejectedValue(new Error('port timeout')),
+      getLogs: vi.fn().mockResolvedValue({
+        stdout: 'Config directory: /root/.openclaw',
+        stderr: 'Invalid config: gateway.mode is required',
+      }),
+    });
+    const { sandbox, startProcessMock } = createMockSandbox({ processes: [] });
+    startProcessMock.mockResolvedValue(process);
+
+    await expect(ensureMoltbotGateway(sandbox, createMockEnv())).rejects.toThrow(
+      /Invalid config: gateway\.mode is required/,
+    );
+  });
+
+  it('falls back to the startup log file when process logs are empty', async () => {
+    suppressConsole();
+
+    const process = createFullMockProcess({
+      id: 'new-gateway',
+      command: '/usr/local/bin/start-openclaw.sh',
+      status: 'starting',
+      waitForPort: vi.fn().mockRejectedValue(new Error('port timeout')),
+      getLogs: vi.fn().mockResolvedValue({ stdout: '', stderr: '' }),
+    });
+    const { sandbox, startProcessMock, execMock } = createMockSandbox({ processes: [] });
+    startProcessMock.mockResolvedValue(process);
+    execMock.mockResolvedValue({
+      stdout: 'Config directory: /root/.openclaw\nOnboard completed',
+      stderr: '',
+      exitCode: 0,
+      success: true,
+      command: '',
+      duration: 0,
+      timestamp: new Date().toISOString(),
+    });
+
+    await expect(ensureMoltbotGateway(sandbox, createMockEnv())).rejects.toThrow(
+      /Startup log: Config directory: \/root\/.openclaw\nOnboard completed/,
+    );
   });
 });

@@ -116,7 +116,7 @@ describe('syncToR2', () => {
       expect(configCmd).toMatch(/^rclone sync /);
     });
 
-    it('rclone commands include --transfers=16 and exclude .git', async () => {
+    it('rclone commands include expected exclude flags for config and workspace sync', async () => {
       const { sandbox, execMock } = createMockSandbox();
       execMock
         .mockResolvedValueOnce(createMockExecResult('yes'))
@@ -135,6 +135,13 @@ describe('syncToR2', () => {
       expect(configCmd).toContain("--exclude='.git/**'");
       expect(configCmd).toContain('/root/.openclaw/');
       expect(configCmd).toContain('r2:moltbot-data/openclaw/');
+
+      const workspaceCmd = execMock.mock.calls[3][0];
+      expect(workspaceCmd).toContain("--exclude='skills/**'");
+      expect(workspaceCmd).toContain("--exclude='.git/**'");
+      expect(workspaceCmd).toContain("--exclude='node_modules/**'");
+      expect(workspaceCmd).toContain("--exclude='plugin-runtime-deps/**'");
+      expect(workspaceCmd).toContain('--delete-excluded');
     });
 
     it('uses custom bucket name', async () => {

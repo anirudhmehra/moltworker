@@ -11,6 +11,8 @@ export interface SyncResult {
 }
 
 const RCLONE_FLAGS = '--transfers=16 --fast-list --s3-no-check-bucket';
+const WORKSPACE_RCLONE_EXCLUDES =
+  "--exclude='skills/**' --exclude='.git/**' --exclude='node_modules/**' --exclude='plugin-runtime-deps/**' --delete-excluded";
 const LAST_SYNC_FILE = '/tmp/.last-sync';
 
 function rcloneRemote(env: MoltbotEnv, prefix: string): string {
@@ -66,7 +68,7 @@ export async function syncToR2(sandbox: Sandbox, env: MoltbotEnv): Promise<SyncR
 
   // Sync workspace (non-fatal, rclone sync propagates deletions)
   await sandbox.exec(
-    `test -d /root/clawd && rclone sync /root/clawd/ ${remote('workspace/')} ${RCLONE_FLAGS} --exclude='skills/**' --exclude='.git/**' || true`,
+    `test -d /root/clawd && rclone sync /root/clawd/ ${remote('workspace/')} ${RCLONE_FLAGS} ${WORKSPACE_RCLONE_EXCLUDES} || true`,
     { timeout: 120000 },
   );
 

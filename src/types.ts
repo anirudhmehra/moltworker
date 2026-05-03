@@ -16,6 +16,8 @@ export interface MoltbotEnv {
   AI_GATEWAY_API_KEY?: string; // API key for the provider configured in AI Gateway
   AI_GATEWAY_BASE_URL?: string; // AI Gateway URL (e.g., https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_id}/anthropic)
   // Direct provider configuration
+  OPENCODE_API_KEY?: string;
+  OPENCODE_MODEL?: string; // Override OpenCode model, defaults to opencode-go/deepseek-v4-flash
   ANTHROPIC_API_KEY?: string;
   ANTHROPIC_BASE_URL?: string;
   OPENAI_API_KEY?: string;

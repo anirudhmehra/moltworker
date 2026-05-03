@@ -21,6 +21,8 @@ export function buildEnvVars(env: MoltbotEnv): Record<string, string> {
   }
 
   // Direct provider keys
+  if (env.OPENCODE_API_KEY) envVars.OPENCODE_API_KEY = env.OPENCODE_API_KEY;
+  if (env.OPENCODE_MODEL) envVars.OPENCODE_MODEL = env.OPENCODE_MODEL;
   if (env.ANTHROPIC_API_KEY) envVars.ANTHROPIC_API_KEY = env.ANTHROPIC_API_KEY;
   if (env.OPENAI_API_KEY) envVars.OPENAI_API_KEY = env.OPENAI_API_KEY;
 

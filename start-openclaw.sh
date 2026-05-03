@@ -9,6 +9,11 @@
 
 set -e
 
+STARTUP_LOG_FILE="/tmp/start-openclaw.log"
+mkdir -p "$(dirname "$STARTUP_LOG_FILE")"
+: > "$STARTUP_LOG_FILE"
+exec > >(tee -a "$STARTUP_LOG_FILE") 2>&1
+
 if pgrep -f "openclaw gateway" > /dev/null 2>&1; then
     echo "OpenClaw gateway is already running, exiting."
     exit 0
@@ -82,7 +87,13 @@ if r2_configured; then
     if [ "$REMOTE_WS_COUNT" -gt 0 ]; then
         echo "Restoring workspace from R2 ($REMOTE_WS_COUNT files)..."
         mkdir -p "$WORKSPACE_DIR"
-        rclone copy "r2:${R2_BUCKET}/workspace/" "$WORKSPACE_DIR/" $RCLONE_FLAGS -v 2>&1 || echo "WARNING: workspace restore failed with exit code $?"
+        rclone copy "r2:${R2_BUCKET}/workspace/" "$WORKSPACE_DIR/" \
+            $RCLONE_FLAGS \
+            --exclude='skills/**' \
+            --exclude='.git/**' \
+            --exclude='node_modules/**' \
+            --exclude='plugin-runtime-deps/**' \
+            -v 2>&1 || echo "WARNING: workspace restore failed with exit code $?"
         echo "Workspace restored"
     fi
 
@@ -104,21 +115,25 @@ fi
 if [ ! -f "$CONFIG_FILE" ]; then
     echo "No existing config found, running openclaw onboard..."
 
-    AUTH_ARGS=""
-    if [ -n "$CLOUDFLARE_AI_GATEWAY_API_KEY" ] && [ -n "$CF_AI_GATEWAY_ACCOUNT_ID" ] && [ -n "$CF_AI_GATEWAY_GATEWAY_ID" ]; then
-        AUTH_ARGS="--auth-choice cloudflare-ai-gateway-api-key \
-            --cloudflare-ai-gateway-account-id $CF_AI_GATEWAY_ACCOUNT_ID \
-            --cloudflare-ai-gateway-gateway-id $CF_AI_GATEWAY_GATEWAY_ID \
-            --cloudflare-ai-gateway-api-key $CLOUDFLARE_AI_GATEWAY_API_KEY"
+    AUTH_ARGS=()
+    if [ -n "$OPENCODE_API_KEY" ]; then
+        AUTH_ARGS=(--auth-choice opencode-go --opencode-go-api-key "$OPENCODE_API_KEY")
+    elif [ -n "$CLOUDFLARE_AI_GATEWAY_API_KEY" ] && [ -n "$CF_AI_GATEWAY_ACCOUNT_ID" ] && [ -n "$CF_AI_GATEWAY_GATEWAY_ID" ]; then
+        AUTH_ARGS=(
+            --auth-choice cloudflare-ai-gateway-api-key
+            --cloudflare-ai-gateway-account-id "$CF_AI_GATEWAY_ACCOUNT_ID"
+            --cloudflare-ai-gateway-gateway-id "$CF_AI_GATEWAY_GATEWAY_ID"
+            --cloudflare-ai-gateway-api-key "$CLOUDFLARE_AI_GATEWAY_API_KEY"
+        )
     elif [ -n "$ANTHROPIC_API_KEY" ]; then
-        AUTH_ARGS="--auth-choice apiKey --anthropic-api-key $ANTHROPIC_API_KEY"
+        AUTH_ARGS=(--auth-choice apiKey --anthropic-api-key "$ANTHROPIC_API_KEY")
     elif [ -n "$OPENAI_API_KEY" ]; then
-        AUTH_ARGS="--auth-choice openai-api-key --openai-api-key $OPENAI_API_KEY"
+        AUTH_ARGS=(--auth-choice openai-api-key --openai-api-key "$OPENAI_API_KEY")
     fi
 
     openclaw onboard --non-interactive --accept-risk \
         --mode local \
-        $AUTH_ARGS \
+        "${AUTH_ARGS[@]}" \
         --gateway-port 18789 \
         --gateway-bind lan \
         --skip-channels \
@@ -169,10 +184,34 @@ if (process.env.OPENCLAW_DEV_MODE === 'true') {
     config.gateway.controlUi.allowInsecureAuth = true;
 }
 
+if (process.env.WORKER_URL) {
+    try {
+        config.gateway.controlUi = config.gateway.controlUi || {};
+        const origin = new URL(process.env.WORKER_URL).origin;
+        const existing = Array.isArray(config.gateway.controlUi.allowedOrigins)
+            ? config.gateway.controlUi.allowedOrigins
+            : [];
+        config.gateway.controlUi.allowedOrigins = Array.from(new Set([...existing, origin]));
+        console.log('Control UI allowed origin added: ' + origin);
+    } catch (e) {
+        console.warn('WORKER_URL is not a valid URL; skipping allowed origin patch');
+    }
+}
+
 // Legacy AI Gateway base URL override:
 // ANTHROPIC_BASE_URL is picked up natively by the Anthropic SDK,
 // so we don't need to patch the provider config. Writing a provider
 // entry without a models array breaks OpenClaw's config validation.
+
+// OpenCode Go subscription default. OpenClaw has built-in routing for the
+// opencode-go catalog; the API key only needs to be present in the process env.
+if (process.env.OPENCODE_API_KEY) {
+    config.agents = config.agents || {};
+    config.agents.defaults = config.agents.defaults || {};
+    const model = process.env.OPENCODE_MODEL || 'opencode-go/deepseek-v4-flash';
+    config.agents.defaults.model = { primary: model };
+    console.log('OpenCode default model set to ' + model);
+}
 
 // AI Gateway model override (CF_AI_GATEWAY_MODEL=provider/model-id)
 // Adds a provider entry for any AI Gateway provider and sets it as default model.
@@ -216,6 +255,18 @@ if (process.env.CF_AI_GATEWAY_MODEL) {
         console.log('AI Gateway model override: provider=' + providerName + ' model=' + modelId + ' via ' + baseUrl);
     } else {
         console.warn('CF_AI_GATEWAY_MODEL set but missing required config (account ID, gateway ID, or API key)');
+    }
+}
+
+// Direct OpenAI: ensure a default model when only OPENAI_API_KEY is set (no CF AI Gateway).
+var useCfGateway = process.env.CF_AI_GATEWAY_MODEL && process.env.CLOUDFLARE_AI_GATEWAY_API_KEY;
+if (process.env.OPENAI_API_KEY && !useCfGateway) {
+    config.agents = config.agents || {};
+    config.agents.defaults = config.agents.defaults || {};
+    var current = config.agents.defaults.model && config.agents.defaults.model.primary;
+    if (!current || typeof current !== 'string' || current.indexOf('openai') === -1) {
+        config.agents.defaults.model = { primary: 'openai/gpt-5.2' };
+        console.log('OpenAI default model set to openai/gpt-5.2');
     }
 }
 
@@ -282,6 +333,7 @@ if r2_configured; then
                 find "$CONFIG_DIR" -newer "$MARKER" -type f -printf '%P\n' 2>/dev/null
                 find "$WORKSPACE_DIR" -newer "$MARKER" \
                     -not -path '*/node_modules/*' \
+                    -not -path '*/plugin-runtime-deps/*' \
                     -not -path '*/.git/*' \
                     -type f -printf '%P\n' 2>/dev/null
             } > "$CHANGED"
@@ -294,7 +346,12 @@ if r2_configured; then
                     $RCLONE_FLAGS --exclude='*.lock' --exclude='*.log' --exclude='*.tmp' --exclude='.git/**' 2>> "$LOGFILE"
                 if [ -d "$WORKSPACE_DIR" ]; then
                     rclone sync "$WORKSPACE_DIR/" "r2:${R2_BUCKET}/workspace/" \
-                        $RCLONE_FLAGS --exclude='skills/**' --exclude='.git/**' --exclude='node_modules/**' 2>> "$LOGFILE"
+                        $RCLONE_FLAGS \
+                        --exclude='skills/**' \
+                        --exclude='.git/**' \
+                        --exclude='node_modules/**' \
+                        --exclude='plugin-runtime-deps/**' \
+                        --delete-excluded 2>> "$LOGFILE"
                 fi
                 if [ -d "$SKILLS_DIR" ]; then
                     rclone sync "$SKILLS_DIR/" "r2:${R2_BUCKET}/skills/" \

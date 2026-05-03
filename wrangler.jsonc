@@ -7,6 +7,11 @@
   "observability": {
     "enabled": true,
   },
+  "vars": {
+    "SANDBOX_SLEEP_AFTER": "30m",
+    "WORKER_URL": "https://moltbot-sandbox.anirudhmehra1230.workers.dev",
+    "DEBUG_ROUTES": "true",
+  },
   // Static assets for admin UI (built by vite)
   "assets": {
     "directory": "./dist/client",
@@ -67,34 +72,36 @@
   "browser": {
     "binding": "BROWSER",
   },
-  // Note: CF_ACCOUNT_ID should be set via `wrangler secret put CF_ACCOUNT_ID`
-  // Secrets to configure via `wrangler secret put`:
+  // Secrets configured in production via the Cloudflare dashboard or `wrangler secret put`:
   //
-  // AI Provider (at least one set required):
+  // Required for current OpenCode Go deployment:
+  // - OPENCODE_API_KEY: OpenCode Go API key. Defaults to opencode-go/deepseek-v4-flash
+  // - MOLTBOT_GATEWAY_TOKEN: Token used to protect remote gateway/control UI access
+  // - CF_ACCESS_TEAM_DOMAIN: Cloudflare Access team domain, e.g. myteam.cloudflareaccess.com
+  // - CF_ACCESS_AUD: Cloudflare Access application audience tag
+  //
+  // R2 persistence:
+  // - CF_ACCOUNT_ID: Cloudflare account ID for the R2 endpoint
+  // - R2_ACCESS_KEY_ID: R2 access key ID
+  // - R2_SECRET_ACCESS_KEY: R2 secret access key
+  // - R2_BUCKET_NAME: Optional override; defaults to moltbot-data
+  //
+  // Runtime behavior:
+  // - DEBUG_ROUTES: Optional; set true to enable /debug/* routes
+  //
+  // Optional chat channels:
+  // - DISCORD_BOT_TOKEN
+  // - TELEGRAM_BOT_TOKEN
+  // - SLACK_BOT_TOKEN
+  // - SLACK_APP_TOKEN
+  //
+  // Browser automation / Control UI origin (optional):
+  // - CDP_SECRET: Shared secret for /cdp endpoint authentication
+  // - WORKER_URL: Public URL of the worker (also added to OpenClaw Control UI allowed origins)
+  //
+  // Alternative AI providers (use instead of OPENCODE_API_KEY):
   // - ANTHROPIC_API_KEY: Direct Anthropic API key
   // - OPENAI_API_KEY: Direct OpenAI API key
-  // - Cloudflare AI Gateway (alternative to direct keys):
-  //   - CLOUDFLARE_AI_GATEWAY_API_KEY: API key for requests through the gateway
-  //   - CF_AI_GATEWAY_ACCOUNT_ID: Your Cloudflare account ID
-  //   - CF_AI_GATEWAY_GATEWAY_ID: Your AI Gateway ID
-  // - Legacy AI Gateway (still supported):
-  //   - AI_GATEWAY_API_KEY: API key
-  //   - AI_GATEWAY_BASE_URL: Gateway endpoint URL
-  //
-  // Authentication:
-  // - MOLTBOT_GATEWAY_TOKEN: Token to protect gateway access
-  // - CF_ACCESS_TEAM_DOMAIN: Cloudflare Access team domain
-  // - CF_ACCESS_AUD: Cloudflare Access application audience
-  //
-  // Chat channels (optional):
-  // - TELEGRAM_BOT_TOKEN, DISCORD_BOT_TOKEN, SLACK_BOT_TOKEN, SLACK_APP_TOKEN
-  //
-  // Browser automation (optional):
-  // - CDP_SECRET: Shared secret for /cdp endpoint authentication
-  // - WORKER_URL: Public URL of the worker
-  //
-  // R2 persistent storage (optional, for data persistence across sessions):
-  // - R2_ACCESS_KEY_ID: R2 access key ID (from R2 API tokens)
-  // - R2_SECRET_ACCESS_KEY: R2 secret access key (from R2 API tokens)
-  // - CF_ACCOUNT_ID: Your Cloudflare account ID (for R2 endpoint URL)
+  // - CLOUDFLARE_AI_GATEWAY_API_KEY + CF_AI_GATEWAY_ACCOUNT_ID + CF_AI_GATEWAY_GATEWAY_ID
+  // - AI_GATEWAY_API_KEY + AI_GATEWAY_BASE_URL: Legacy AI Gateway path
 }

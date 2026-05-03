@@ -11,7 +11,7 @@
  * - Configuration via environment secrets
  *
  * Required secrets (set via `wrangler secret put`):
- * - ANTHROPIC_API_KEY: Your Anthropic API key
+ * - OPENCODE_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, or AI Gateway credentials
  *
  * Optional secrets:
  * - MOLTBOT_GATEWAY_TOKEN: Token to protect gateway access
@@ -47,6 +47,23 @@ function transformErrorMessage(message: string, host: string): string {
   return message;
 }
 
+function hasAiProvider(env: MoltbotEnv): boolean {
+  const hasCloudflareGateway = !!(
+    env.CLOUDFLARE_AI_GATEWAY_API_KEY &&
+    env.CF_AI_GATEWAY_ACCOUNT_ID &&
+    env.CF_AI_GATEWAY_GATEWAY_ID
+  );
+  const hasLegacyGateway = !!(env.AI_GATEWAY_API_KEY && env.AI_GATEWAY_BASE_URL);
+
+  return !!(
+    hasCloudflareGateway ||
+    hasLegacyGateway ||
+    env.OPENCODE_API_KEY ||
+    env.ANTHROPIC_API_KEY ||
+    env.OPENAI_API_KEY
+  );
+}
+
 export { Sandbox };
 
 /**
@@ -73,18 +90,9 @@ function validateRequiredEnv(env: MoltbotEnv): string[] {
   }
 
   // Check for AI provider configuration (at least one must be set)
-  const hasCloudflareGateway = !!(
-    env.CLOUDFLARE_AI_GATEWAY_API_KEY &&
-    env.CF_AI_GATEWAY_ACCOUNT_ID &&
-    env.CF_AI_GATEWAY_GATEWAY_ID
-  );
-  const hasLegacyGateway = !!(env.AI_GATEWAY_API_KEY && env.AI_GATEWAY_BASE_URL);
-  const hasAnthropicKey = !!env.ANTHROPIC_API_KEY;
-  const hasOpenAIKey = !!env.OPENAI_API_KEY;
-
-  if (!hasCloudflareGateway && !hasLegacyGateway && !hasAnthropicKey && !hasOpenAIKey) {
+  if (!hasAiProvider(env)) {
     missing.push(
-      'ANTHROPIC_API_KEY, OPENAI_API_KEY, or CLOUDFLARE_AI_GATEWAY_API_KEY + CF_AI_GATEWAY_ACCOUNT_ID + CF_AI_GATEWAY_GATEWAY_ID',
+      'OPENCODE_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, or CLOUDFLARE_AI_GATEWAY_API_KEY + CF_AI_GATEWAY_ACCOUNT_ID + CF_AI_GATEWAY_GATEWAY_ID',
     );
   }
 
@@ -98,9 +106,8 @@ function validateRequiredEnv(env: MoltbotEnv): string[] {
  * - 'never' (default): Container stays alive indefinitely (recommended due to long cold starts)
  * - Duration string: e.g., '10m', '1h', '30s' - container sleeps after this period of inactivity
  *
- * To reduce costs at the expense of cold start latency, set SANDBOX_SLEEP_AFTER to a duration:
- *   npx wrangler secret put SANDBOX_SLEEP_AFTER
- *   # Enter: 10m (or 1h, 30m, etc.)
+ * To reduce costs at the expense of cold start latency, set SANDBOX_SLEEP_AFTER
+ * as a plaintext Wrangler var to a duration such as '10m', '30m', or '1h'.
  */
 function buildSandboxOptions(env: MoltbotEnv): SandboxOptions {
   const sleepAfter = env.SANDBOX_SLEEP_AFTER?.toLowerCase() || 'never';
@@ -263,8 +270,8 @@ app.all('*', async (c) => {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
     let hint = 'Check worker logs with: wrangler tail';
-    if (!c.env.ANTHROPIC_API_KEY) {
-      hint = 'ANTHROPIC_API_KEY is not set. Run: wrangler secret put ANTHROPIC_API_KEY';
+    if (!hasAiProvider(c.env)) {
+      hint = 'No AI provider key is set. Run: wrangler secret put OPENCODE_API_KEY';
     } else if (errorMessage.includes('heap out of memory') || errorMessage.includes('OOM')) {
       hint = 'Gateway ran out of memory. Try again or check for memory leaks.';
     }
