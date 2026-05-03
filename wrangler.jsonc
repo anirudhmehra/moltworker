@@ -7,6 +7,11 @@
   "observability": {
     "enabled": true,
   },
+  "vars": {
+    "SANDBOX_SLEEP_AFTER": "30m",
+    "WORKER_URL": "https://moltbot-sandbox.anirudhmehra1230.workers.dev",
+    "DEBUG_ROUTES": "true",
+  },
   // Static assets for admin UI (built by vite)
   "assets": {
     "directory": "./dist/client",
@@ -76,18 +81,19 @@
   "triggers": {
     "crons": ["* * * * *"],
   },
-  // Secrets to configure via `wrangler secret put`:
+  // Secrets configured in production via the Cloudflare dashboard or `wrangler secret put`:
   //
-  // AI Provider (at least one set required):
+  // Required for the current OpenCode Go deployment:
+  // - OPENCODE_API_KEY: OpenCode Go API key. Defaults to opencode-go/deepseek-v4-flash
+  // - MOLTBOT_GATEWAY_TOKEN: Token used to protect remote gateway/control UI access
+  // - CF_ACCESS_TEAM_DOMAIN: Cloudflare Access team domain
+  // - CF_ACCESS_AUD: Cloudflare Access application audience
+  //
+  // Alternative AI providers (use instead of OPENCODE_API_KEY):
   // - ANTHROPIC_API_KEY: Direct Anthropic API key
   // - OPENAI_API_KEY: Direct OpenAI API key
-  // - Cloudflare AI Gateway (alternative to direct keys):
-  //   - CLOUDFLARE_AI_GATEWAY_API_KEY: API key for requests through the gateway
-  //   - CF_AI_GATEWAY_ACCOUNT_ID: Your Cloudflare account ID
-  //   - CF_AI_GATEWAY_GATEWAY_ID: Your AI Gateway ID
-  // - Legacy AI Gateway (still supported):
-  //   - AI_GATEWAY_API_KEY: API key
-  //   - AI_GATEWAY_BASE_URL: Gateway endpoint URL
+  // - CLOUDFLARE_AI_GATEWAY_API_KEY + CF_AI_GATEWAY_ACCOUNT_ID + CF_AI_GATEWAY_GATEWAY_ID
+  // - AI_GATEWAY_API_KEY + AI_GATEWAY_BASE_URL: Legacy AI Gateway path
   //
   // Authentication:
   // - MOLTBOT_GATEWAY_TOKEN: Token to protect gateway access
@@ -97,11 +103,15 @@
   // Chat channels (optional):
   // - TELEGRAM_BOT_TOKEN, DISCORD_BOT_TOKEN, SLACK_BOT_TOKEN, SLACK_APP_TOKEN
   //
-  // Browser automation (optional):
+  // Browser automation / Control UI origin (optional):
   // - CDP_SECRET: Shared secret for /cdp endpoint authentication
-  // - WORKER_URL: Public URL of the worker
+  // - WORKER_URL: Public URL of the worker (also added to OpenClaw Control UI allowed origins)
   //
-  // R2 persistent storage (for data persistence across container restarts):
+  // Runtime behavior (plaintext vars above):
+  // - SANDBOX_SLEEP_AFTER: How long the container stays warm after inactivity
+  // - DEBUG_ROUTES: Enable /debug/* endpoints
+  //
+  // Backup/restore:
   // - R2_ACCESS_KEY_ID: R2 access key ID (from R2 API tokens)
   // - R2_SECRET_ACCESS_KEY: R2 secret access key (from R2 API tokens)
   // - CLOUDFLARE_ACCOUNT_ID: Your Cloudflare account ID

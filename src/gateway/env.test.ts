@@ -21,6 +21,16 @@ describe('buildEnvVars', () => {
     expect(result.OPENAI_API_KEY).toBe('sk-openai-key');
   });
 
+  it('includes OpenCode settings when set directly', () => {
+    const env = createMockEnv({
+      OPENCODE_API_KEY: 'sk-opencode-key',
+      OPENCODE_MODEL: 'opencode-go/deepseek-v4-flash',
+    });
+    const result = buildEnvVars(env);
+    expect(result.OPENCODE_API_KEY).toBe('sk-opencode-key');
+    expect(result.OPENCODE_MODEL).toBe('opencode-go/deepseek-v4-flash');
+  });
+
   // Cloudflare AI Gateway (new native provider)
   it('passes Cloudflare AI Gateway env vars', () => {
     const env = createMockEnv({
@@ -136,6 +146,18 @@ describe('buildEnvVars', () => {
     });
     const result = buildEnvVars(env);
     expect(result.CF_AI_GATEWAY_MODEL).toBe('workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast');
+  });
+
+  it('passes CLOUDFLARE_ACCOUNT_ID to the container', () => {
+    const env = createMockEnv({ CLOUDFLARE_ACCOUNT_ID: 'acct-123' });
+    const result = buildEnvVars(env);
+    expect(result.CLOUDFLARE_ACCOUNT_ID).toBe('acct-123');
+  });
+
+  it('passes WORKER_URL to the container', () => {
+    const env = createMockEnv({ WORKER_URL: 'https://moltbot-sandbox.example.workers.dev' });
+    const result = buildEnvVars(env);
+    expect(result.WORKER_URL).toBe('https://moltbot-sandbox.example.workers.dev');
   });
 
   it('combines all env vars correctly', () => {

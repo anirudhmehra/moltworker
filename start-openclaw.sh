@@ -12,6 +12,11 @@
 
 set -e
 
+STARTUP_LOG_FILE="/tmp/start-openclaw.log"
+mkdir -p "$(dirname "$STARTUP_LOG_FILE")"
+: > "$STARTUP_LOG_FILE"
+exec > >(tee -a "$STARTUP_LOG_FILE") 2>&1
+
 if pgrep -f "openclaw gateway" > /dev/null 2>&1; then
     echo "OpenClaw gateway is already running, exiting."
     exit 0
@@ -33,21 +38,28 @@ if [ ! -f "$CONFIG_FILE" ]; then
     echo "No existing config found, running openclaw onboard..."
 
     # Determine auth choice — openclaw onboard reads the actual key values
-    # from environment variables (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.)
-    # so we only pass --auth-choice, never the key itself, to avoid
-    # exposing secrets in process arguments visible via ps/proc.
-    AUTH_ARGS=""
-    if [ -n "$CLOUDFLARE_AI_GATEWAY_API_KEY" ] && [ -n "$CF_AI_GATEWAY_ACCOUNT_ID" ] && [ -n "$CF_AI_GATEWAY_GATEWAY_ID" ]; then
-        AUTH_ARGS="--auth-choice cloudflare-ai-gateway-api-key --cloudflare-ai-gateway-account-id $CF_AI_GATEWAY_ACCOUNT_ID --cloudflare-ai-gateway-gateway-id $CF_AI_GATEWAY_GATEWAY_ID"
+    # from environment variables (OPENCODE_API_KEY, ANTHROPIC_API_KEY,
+    # OPENAI_API_KEY, etc.) so we only pass --auth-choice and any required
+    # non-secret metadata, never the key itself, to avoid exposing secrets in
+    # process arguments visible via ps/proc.
+    AUTH_ARGS=()
+    if [ -n "$OPENCODE_API_KEY" ]; then
+        AUTH_ARGS=(--auth-choice opencode-go)
+    elif [ -n "$CLOUDFLARE_AI_GATEWAY_API_KEY" ] && [ -n "$CF_AI_GATEWAY_ACCOUNT_ID" ] && [ -n "$CF_AI_GATEWAY_GATEWAY_ID" ]; then
+        AUTH_ARGS=(
+            --auth-choice cloudflare-ai-gateway-api-key
+            --cloudflare-ai-gateway-account-id "$CF_AI_GATEWAY_ACCOUNT_ID"
+            --cloudflare-ai-gateway-gateway-id "$CF_AI_GATEWAY_GATEWAY_ID"
+        )
     elif [ -n "$ANTHROPIC_API_KEY" ]; then
-        AUTH_ARGS="--auth-choice apiKey"
+        AUTH_ARGS=(--auth-choice apiKey)
     elif [ -n "$OPENAI_API_KEY" ]; then
-        AUTH_ARGS="--auth-choice openai-api-key"
+        AUTH_ARGS=(--auth-choice openai-api-key)
     fi
 
     openclaw onboard --non-interactive --accept-risk \
         --mode local \
-        $AUTH_ARGS \
+        "${AUTH_ARGS[@]}" \
         --gateway-port 18789 \
         --gateway-bind lan \
         --skip-channels \
@@ -66,7 +78,7 @@ fi
 # - Channel config (Telegram, Discord, Slack)
 # - Gateway token auth
 # - Trusted proxies for sandbox networking
-# - Base URL override for legacy AI Gateway path
+# - Explicit Control UI allowed origin when WORKER_URL is configured
 node << 'EOFPATCH'
 const fs = require('fs');
 
@@ -87,26 +99,30 @@ config.channels = config.channels || {};
 config.gateway.port = 18789;
 config.gateway.mode = 'local';
 config.gateway.trustedProxies = ['10.1.0.0'];
-
 config.gateway.controlUi = config.gateway.controlUi || {};
-config.gateway.controlUi.allowedOrigins = ['*'];
+
+if (process.env.WORKER_URL) {
+    try {
+        const origin = new URL(process.env.WORKER_URL).origin;
+        const existing = Array.isArray(config.gateway.controlUi.allowedOrigins)
+            ? config.gateway.controlUi.allowedOrigins
+            : [];
+        config.gateway.controlUi.allowedOrigins = Array.from(new Set([...existing, origin]));
+        console.log('Control UI allowed origin added: ' + origin);
+    } catch (e) {
+        console.warn('WORKER_URL is not a valid URL; skipping allowed origin patch');
+    }
+} else if (!Array.isArray(config.gateway.controlUi.allowedOrigins) || config.gateway.controlUi.allowedOrigins.length === 0) {
+    // Keep the upstream fallback for generic deployments that haven't set WORKER_URL yet.
+    config.gateway.controlUi.allowedOrigins = ['*'];
+}
 
 if (process.env.OPENCLAW_GATEWAY_TOKEN) {
     config.gateway.auth = config.gateway.auth || {};
     config.gateway.auth.token = process.env.OPENCLAW_GATEWAY_TOKEN;
 }
 
-// Allow any origin to connect to the gateway control UI.
-// The gateway runs inside a Cloudflare Container behind the Worker, which
-// proxies requests from the public workers.dev domain. Without this,
-// openclaw >= 2026.2.26 rejects WebSocket connections because the browser's
-// origin (https://....workers.dev) doesn't match the gateway's localhost.
-// Security is handled by CF Access + gateway token auth, not origin checks.
-config.gateway.controlUi = config.gateway.controlUi || {};
-config.gateway.controlUi.allowedOrigins = ['*'];
-
 if (process.env.OPENCLAW_DEV_MODE === 'true') {
-    config.gateway.controlUi = config.gateway.controlUi || {};
     config.gateway.controlUi.allowInsecureAuth = true;
 }
 
@@ -114,6 +130,16 @@ if (process.env.OPENCLAW_DEV_MODE === 'true') {
 // ANTHROPIC_BASE_URL is picked up natively by the Anthropic SDK,
 // so we don't need to patch the provider config. Writing a provider
 // entry without a models array breaks OpenClaw's config validation.
+
+// OpenCode Go subscription default. OpenClaw has built-in routing for the
+// opencode-go catalog; the API key only needs to be present in the process env.
+if (process.env.OPENCODE_API_KEY) {
+    config.agents = config.agents || {};
+    config.agents.defaults = config.agents.defaults || {};
+    const model = process.env.OPENCODE_MODEL || 'opencode-go/deepseek-v4-flash';
+    config.agents.defaults.model = { primary: model };
+    console.log('OpenCode default model set to ' + model);
+}
 
 // AI Gateway model override (CF_AI_GATEWAY_MODEL=provider/model-id)
 // Adds a provider entry for any AI Gateway provider and sets it as default model.
@@ -135,8 +161,8 @@ if (process.env.CF_AI_GATEWAY_MODEL) {
     if (accountId && gatewayId) {
         baseUrl = 'https://gateway.ai.cloudflare.com/v1/' + accountId + '/' + gatewayId + '/' + gwProvider;
         if (gwProvider === 'workers-ai') baseUrl += '/v1';
-    } else if (gwProvider === 'workers-ai' && process.env.CF_ACCOUNT_ID) {
-        baseUrl = 'https://api.cloudflare.com/client/v4/accounts/' + process.env.CF_ACCOUNT_ID + '/ai/v1';
+    } else if (gwProvider === 'workers-ai' && process.env.CLOUDFLARE_ACCOUNT_ID) {
+        baseUrl = 'https://api.cloudflare.com/client/v4/accounts/' + process.env.CLOUDFLARE_ACCOUNT_ID + '/ai/v1';
     }
 
     if (baseUrl && apiKey) {
@@ -161,8 +187,8 @@ if (process.env.CF_AI_GATEWAY_MODEL) {
 }
 
 // Telegram configuration
-// Overwrite entire channel object to drop stale keys from old R2 backups
-// that would fail OpenClaw's strict config validation (see #47)
+// Overwrite entire channel object to drop stale keys from old backups
+// that would fail OpenClaw's strict config validation.
 if (process.env.TELEGRAM_BOT_TOKEN) {
     const dmPolicy = process.env.TELEGRAM_DM_POLICY || 'pairing';
     config.channels.telegram = {

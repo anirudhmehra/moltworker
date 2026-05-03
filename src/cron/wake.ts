@@ -48,7 +48,7 @@ function computeNextRunAtMs(schedule: CronSchedule, nowMs: number): number | und
   if (!expr || expr.length > 200) return undefined;
   try {
     const cron = new Cron(expr, {
-      timezone: schedule.tz?.trim() || undefined,
+      timezone: schedule.tz?.trim() || 'UTC',
     });
     const next = cron.nextRun(new Date(nowMs));
     return next ? next.getTime() : undefined;

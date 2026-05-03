@@ -2,7 +2,12 @@
 # .dev.vars is gitignored and used by wrangler dev
 
 # AI Provider (at least one required)
-ANTHROPIC_API_KEY=sk-ant-...
+# OpenCode Go subscription. Defaults to opencode-go/deepseek-v4-flash.
+OPENCODE_API_KEY=sk-...
+# OPENCODE_MODEL=opencode-go/deepseek-v4-flash
+
+# Direct provider alternatives
+# ANTHROPIC_API_KEY=sk-ant-...
 # OPENAI_API_KEY=sk-...
 
 # Cloudflare AI Gateway (alternative to direct provider keys)
@@ -23,7 +28,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 # E2E_TEST_MODE=true
 
 # Enable debug routes at /debug/* (optional)
-# DEBUG_ROUTES=true
+DEBUG_ROUTES=true
 
 # Optional - set a fixed token instead of auto-generated
 MOLTBOT_GATEWAY_TOKEN=dev-token-change-in-prod
@@ -37,6 +42,6 @@ MOLTBOT_GATEWAY_TOKEN=dev-token-change-in-prod
 # TELEGRAM_BOT_TOKEN=optional
 # DISCORD_BOT_TOKEN=optional
 
-# CDP (Chrome DevTools Protocol) configuration for browser automation
+# CDP (Chrome DevTools Protocol) / Control UI origin configuration
 # CDP_SECRET=shared-secret-for-cdp-auth
-# WORKER_URL=https://your-worker.example.com
+WORKER_URL=https://moltbot-sandbox.anirudhmehra1230.workers.dev

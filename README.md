@@ -11,7 +11,7 @@ Run [OpenClaw](https://github.com/openclaw/openclaw) (formerly Moltbot, formerly
 ## Requirements
 
 - [Workers Paid plan](https://www.cloudflare.com/plans/developer-platform/) ($5 USD/month) — required for Cloudflare Sandbox containers. Running the container incurs additional compute costs; see [Container Cost Estimate](#container-cost-estimate) below for details.
-- [Anthropic API key](https://console.anthropic.com/) — for Claude access, or you can use AI Gateway's [Unified Billing](https://developers.cloudflare.com/ai-gateway/features/unified-billing/)
+- An AI provider key. OpenCode Go via `OPENCODE_API_KEY` is the default path; direct Anthropic/OpenAI keys and Cloudflare AI Gateway are also supported.
 
 The following Cloudflare features used by this project have free tiers:
 - Cloudflare Access (authentication)
@@ -62,10 +62,15 @@ _Cloudflare Sandboxes are available on the [Workers Paid plan](https://dash.clou
 # Install dependencies
 npm install
 
-# Set your API key (direct Anthropic access)
-npx wrangler secret put ANTHROPIC_API_KEY
+# Set your OpenCode Go API key. Defaults to opencode-go/deepseek-v4-flash.
+npx wrangler secret put OPENCODE_API_KEY
 
-# Or use Cloudflare AI Gateway instead (see "Optional: Cloudflare AI Gateway" below)
+# Optional: override the default OpenCode model
+# npx wrangler secret put OPENCODE_MODEL
+
+# Or use direct Anthropic/OpenAI or Cloudflare AI Gateway instead
+# npx wrangler secret put ANTHROPIC_API_KEY
+# npx wrangler secret put OPENAI_API_KEY
 # npx wrangler secret put CLOUDFLARE_AI_GATEWAY_API_KEY
 # npx wrangler secret put CF_AI_GATEWAY_ACCOUNT_ID
 # npx wrangler secret put CF_AI_GATEWAY_GATEWAY_ID
@@ -232,14 +237,9 @@ Without R2 credentials, moltbot still works but uses ephemeral storage (data los
 
 ## Container Lifecycle
 
-By default, the sandbox container stays alive indefinitely (`SANDBOX_SLEEP_AFTER=never`). This is recommended because cold starts take 1-2 minutes.
+By default, this repo sets `SANDBOX_SLEEP_AFTER=30m` as a plaintext Wrangler variable so the sandbox sleeps after 30 minutes of inactivity. Set it to `never` if you prefer to keep the container alive indefinitely; cold starts can take 1-2 minutes.
 
-To reduce costs for infrequently used deployments, you can configure the container to sleep after a period of inactivity:
-
-```bash
-npx wrangler secret put SANDBOX_SLEEP_AFTER
-# Enter: 10m (or 1h, 30m, etc.)
-```
+To change it, edit the `vars.SANDBOX_SLEEP_AFTER` value in `wrangler.jsonc` and redeploy. Example values: `10m`, `30m`, `1h`, or `never`.
 
 When the container sleeps, the next request will trigger a cold start. If you have R2 storage configured, your paired devices and data will persist across restarts.
 
@@ -299,12 +299,15 @@ npx wrangler secret put CDP_SECRET
 # Enter a secure random string
 ```
 
-2. Set your worker's public URL:
+2. Set your worker's public URL as the plaintext `WORKER_URL` var in `wrangler.jsonc`:
 
-```bash
-npx wrangler secret put WORKER_URL
-# Enter: https://your-worker.workers.dev
+```jsonc
+"vars": {
+  "WORKER_URL": "https://your-worker.workers.dev"
+}
 ```
+
+This same value is also added to OpenClaw's `gateway.controlUi.allowedOrigins` so the hosted Control UI can connect from the Worker origin.
 
 3. Redeploy:
 
@@ -412,6 +415,8 @@ The previous `AI_GATEWAY_API_KEY` + `AI_GATEWAY_BASE_URL` approach is still supp
 
 | Secret | Required | Description |
 |--------|----------|-------------|
+| `OPENCODE_API_KEY` | Yes* | OpenCode Go API key. Default model is `opencode-go/deepseek-v4-flash` unless `OPENCODE_MODEL` is set |
+| `OPENCODE_MODEL` | No | Override the default OpenCode Go model |
 | `CLOUDFLARE_AI_GATEWAY_API_KEY` | Yes* | Your AI provider's API key, passed through the gateway (e.g., your Anthropic API key). Requires `CF_AI_GATEWAY_ACCOUNT_ID` and `CF_AI_GATEWAY_GATEWAY_ID` |
 | `CF_AI_GATEWAY_ACCOUNT_ID` | Yes* | Your Cloudflare account ID (used to construct the gateway URL) |
 | `CF_AI_GATEWAY_GATEWAY_ID` | Yes* | Your AI Gateway ID (used to construct the gateway URL) |
@@ -437,7 +442,7 @@ The previous `AI_GATEWAY_API_KEY` + `AI_GATEWAY_BASE_URL` approach is still supp
 | `SLACK_BOT_TOKEN` | No | Slack bot token |
 | `SLACK_APP_TOKEN` | No | Slack app token |
 | `CDP_SECRET` | No | Shared secret for CDP endpoint authentication (see [Browser Automation](#optional-browser-automation-cdp)) |
-| `WORKER_URL` | No | Public URL of the worker (required for CDP) |
+| `WORKER_URL` | No | Public URL of the worker (used for CDP and OpenClaw Control UI allowed origin) |
 
 ## Security Considerations
 
