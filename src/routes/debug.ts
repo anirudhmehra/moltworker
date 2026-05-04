@@ -348,7 +348,7 @@ debug.get('/env', async (c) => {
     has_gateway_token: !!c.env.MOLTBOT_GATEWAY_TOKEN,
     has_r2_access_key: !!c.env.R2_ACCESS_KEY_ID,
     has_r2_secret_key: !!c.env.R2_SECRET_ACCESS_KEY,
-    has_cloudflare_account_id: !!c.env.CLOUDFLARE_ACCOUNT_ID,
+    has_cloudflare_account_id: !!(c.env.CLOUDFLARE_ACCOUNT_ID || c.env.CF_ACCOUNT_ID),
     dev_mode: c.env.DEV_MODE,
     debug_routes: c.env.DEBUG_ROUTES,
     bind_mode: 'lan',
@@ -362,7 +362,7 @@ debug.get('/container-config', async (c) => {
   const sandbox = c.get('sandbox');
 
   try {
-    const proc = await sandbox.startProcess('cat /root/.openclaw/openclaw.json');
+    const proc = await sandbox.startProcess('cat /home/openclaw/.openclaw/openclaw.json');
     await waitForProcess(proc, 5000);
 
     const logs = await proc.getLogs();
@@ -379,6 +379,7 @@ debug.get('/container-config', async (c) => {
     return c.json({
       status: proc.status,
       exitCode: proc.exitCode,
+      path: '/home/openclaw/.openclaw/openclaw.json',
       config,
       raw: config ? undefined : stdout,
       stderr,

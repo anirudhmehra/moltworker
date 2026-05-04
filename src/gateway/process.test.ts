@@ -195,7 +195,7 @@ describe('ensureGateway', () => {
       status: 'starting',
       waitForPort: vi.fn().mockRejectedValue(new Error('port timeout')),
       getLogs: vi.fn().mockResolvedValue({
-        stdout: 'Config directory: /root/.openclaw',
+        stdout: 'Config directory: /home/openclaw/.openclaw',
         stderr: 'Invalid config: gateway.mode is required',
       }),
     });
@@ -223,7 +223,7 @@ describe('ensureGateway', () => {
     execMock
       .mockResolvedValueOnce(createMockExecResult('', { exitCode: 1 }))
       .mockResolvedValueOnce({
-        stdout: 'Config directory: /root/.openclaw\nOnboard completed',
+        stdout: 'Config directory: /home/openclaw/.openclaw\nOnboard completed',
         stderr: '',
         exitCode: 0,
         success: true,
@@ -233,7 +233,7 @@ describe('ensureGateway', () => {
       });
 
     await expect(ensureGateway(sandbox, createMockEnv())).rejects.toThrow(
-      /Startup log: Config directory: \/root\/.openclaw\nOnboard completed/,
+      /Startup log: Config directory: \/home\/openclaw\/.openclaw\nOnboard completed/,
     );
   });
 });

@@ -154,6 +154,12 @@ describe('buildEnvVars', () => {
     expect(result.CLOUDFLARE_ACCOUNT_ID).toBe('acct-123');
   });
 
+  it('falls back to legacy CF_ACCOUNT_ID for the container', () => {
+    const env = createMockEnv({ CF_ACCOUNT_ID: 'acct-legacy' });
+    const result = buildEnvVars(env);
+    expect(result.CLOUDFLARE_ACCOUNT_ID).toBe('acct-legacy');
+  });
+
   it('passes WORKER_URL to the container', () => {
     const env = createMockEnv({ WORKER_URL: 'https://moltbot-sandbox.example.workers.dev' });
     const result = buildEnvVars(env);

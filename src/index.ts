@@ -270,11 +270,9 @@ app.all('*', async (c) => {
   const isWebSocketRequest = request.headers.get('Upgrade')?.toLowerCase() === 'websocket';
   const acceptsHtml = request.headers.get('Accept')?.includes('text/html');
 
-  // For browser HTML requests, check if the gateway is running before proxying.
-  // If not running, serve the loading page immediately. The loading page polls
-  // /api/status which handles restore + gateway start. We use a very short timeout
-  // (3s) on findExistingGatewayProcess to avoid blocking — if it doesn't respond,
-  // we assume the gateway isn't ready.
+  // For browser HTML requests, check if the gateway is actually reachable
+  // before proxying. A process can be "running" while the port is still not
+  // accepting connections, which would otherwise surface a raw 500 page.
   if (!isWebSocketRequest && acceptsHtml) {
     let gatewayReady = false;
     try {
@@ -282,7 +280,10 @@ app.all('*', async (c) => {
         findExistingGatewayProcess(sandbox),
         new Promise<null>((resolve) => setTimeout(() => resolve(null), 3_000)),
       ]);
-      gatewayReady = proc !== null && proc.status === 'running';
+      if (proc !== null && proc.status === 'running') {
+        await proc.waitForPort(GATEWAY_PORT, { mode: 'tcp', timeout: 3_000 });
+        gatewayReady = true;
+      }
     } catch {
       // Treat as not ready
     }
@@ -323,15 +324,48 @@ app.all('*', async (c) => {
       console.log('[WS] URL:', url.pathname + redactedSearch);
     }
 
-    // Inject gateway token into WebSocket request if not already present.
-    // CF Access redirects strip query params, so authenticated users lose ?token=.
-    // Since the user already passed CF Access auth, we inject the token server-side.
-    let wsRequest = request;
-    if (c.env.MOLTBOT_GATEWAY_TOKEN && !url.searchParams.has('token')) {
-      const tokenUrl = new URL(url.toString());
-      tokenUrl.searchParams.set('token', c.env.MOLTBOT_GATEWAY_TOKEN);
-      wsRequest = new Request(tokenUrl.toString(), request);
+    // Inject gateway token into the container-side WebSocket request if not
+    // already present. OpenClaw requires a syntactically valid Origin header
+    // for browser-style Control UI clients, but the gateway is only reachable
+    // through this Worker. Re-stamp the proxied request with the Worker/public
+    // origin instead of the browser's raw upgrade headers, and drop unrelated
+    // browser/proxy headers that do not make sense inside the container.
+    const wsHeaders = new Headers(request.headers);
+    wsHeaders.delete('Host');
+    wsHeaders.delete('host');
+    wsHeaders.delete('Cookie');
+    wsHeaders.delete('cookie');
+    wsHeaders.delete('X-Forwarded-Proto');
+    wsHeaders.delete('x-forwarded-proto');
+    wsHeaders.delete('X-Real-IP');
+    wsHeaders.delete('x-real-ip');
+
+    try {
+      const proxyOrigin = c.env.WORKER_URL
+        ? new URL(c.env.WORKER_URL).origin
+        : new URL(request.url).origin;
+      wsHeaders.set('Origin', proxyOrigin);
+      wsHeaders.set('origin', proxyOrigin);
+      if (debugLogs) {
+        console.log('[WS] Forwarding synthetic Origin:', proxyOrigin);
+      }
+    } catch {
+      wsHeaders.delete('Origin');
+      wsHeaders.delete('origin');
+      if (debugLogs) {
+        console.log('[WS] Failed to derive synthetic Origin; forwarding without Origin');
+      }
     }
+
+    const tokenUrl = new URL(url.pathname + url.search, 'http://127.0.0.1');
+    if (c.env.MOLTBOT_GATEWAY_TOKEN && !tokenUrl.searchParams.has('token')) {
+      tokenUrl.searchParams.set('token', c.env.MOLTBOT_GATEWAY_TOKEN);
+    }
+
+    const wsRequest = new Request(tokenUrl.toString(), {
+      method: request.method,
+      headers: wsHeaders,
+    });
 
     // Get WebSocket connection to the container (with retry on crash)
     let containerResponse: Response;
@@ -384,7 +418,7 @@ app.all('*', async (c) => {
       console.log('[WS] serverWs.readyState:', serverWs.readyState);
     }
 
-    // Relay messages from client to container
+    // Relay messages from client to container.
     serverWs.addEventListener('message', (event) => {
       if (debugLogs) {
         console.log(
@@ -527,9 +561,13 @@ app.all('*', async (c) => {
   // of a blank page that the user would be stuck on forever.
   if (acceptsHtml) {
     const body = await httpResponse.text();
-    if (!body || body.length < 50) {
+    if (
+      !body ||
+      body.length < 50 ||
+      (httpResponse.status >= 500 && body.includes('The container is not listening'))
+    ) {
       console.log(
-        `[HTTP] Empty/short response (${body.length} bytes) for HTML request, serving loading page`,
+        `[HTTP] Gateway HTML not ready (status=${httpResponse.status}, bytes=${body.length}), serving loading page`,
       );
       return c.html(loadingPageHtml);
     }

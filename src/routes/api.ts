@@ -192,16 +192,17 @@ adminApi.post('/devices/approve-all', async (c) => {
 
 // GET /api/admin/storage - Get backup/restore status
 adminApi.get('/storage', async (c) => {
+  const cloudflareAccountId = c.env.CLOUDFLARE_ACCOUNT_ID || c.env.CF_ACCOUNT_ID;
   const hasCredentials = !!(
     c.env.R2_ACCESS_KEY_ID &&
     c.env.R2_SECRET_ACCESS_KEY &&
-    c.env.CLOUDFLARE_ACCOUNT_ID
+    cloudflareAccountId
   );
 
   const missing: string[] = [];
   if (!c.env.R2_ACCESS_KEY_ID) missing.push('R2_ACCESS_KEY_ID');
   if (!c.env.R2_SECRET_ACCESS_KEY) missing.push('R2_SECRET_ACCESS_KEY');
-  if (!c.env.CLOUDFLARE_ACCOUNT_ID) missing.push('CLOUDFLARE_ACCOUNT_ID');
+  if (!cloudflareAccountId) missing.push('CLOUDFLARE_ACCOUNT_ID (or legacy CF_ACCOUNT_ID)');
 
   const lastBackupId = hasCredentials ? await getLastBackupId(c.env.BACKUP_BUCKET) : null;
 

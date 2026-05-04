@@ -22,10 +22,11 @@ if pgrep -f "openclaw gateway" > /dev/null 2>&1; then
     exit 0
 fi
 
-CONFIG_DIR="/root/.openclaw"
+HOME_DIR="${HOME:-/home/openclaw}"
+CONFIG_DIR="$HOME_DIR/.openclaw"
 CONFIG_FILE="$CONFIG_DIR/openclaw.json"
-WORKSPACE_DIR="/root/clawd"
-SKILLS_DIR="/root/clawd/skills"
+WORKSPACE_DIR="$HOME_DIR/clawd"
+SKILLS_DIR="$WORKSPACE_DIR/skills"
 
 echo "Config directory: $CONFIG_DIR"
 
@@ -82,7 +83,7 @@ fi
 node << 'EOFPATCH'
 const fs = require('fs');
 
-const configPath = '/root/.openclaw/openclaw.json';
+const configPath = `${process.env.HOME || '/home/openclaw'}/.openclaw/openclaw.json`;
 console.log('Patching config at:', configPath);
 let config = {};
 
@@ -98,24 +99,24 @@ config.channels = config.channels || {};
 // Gateway configuration
 config.gateway.port = 18789;
 config.gateway.mode = 'local';
-config.gateway.trustedProxies = ['10.1.0.0'];
+// OpenClaw expects trusted proxies in CIDR notation. Cloudflare's internal
+// worker-to-container proxy currently connects from RFC1918 10.x addresses.
+config.gateway.trustedProxies = ['10.0.0.0/8'];
 config.gateway.controlUi = config.gateway.controlUi || {};
 
+// Allow any browser origin for the hosted Control UI. In this deployment the
+// gateway is only reachable through the Worker, and requests are already gated
+// by Cloudflare Access plus the gateway token.
+config.gateway.controlUi.allowedOrigins = ['*'];
 if (process.env.WORKER_URL) {
     try {
         const origin = new URL(process.env.WORKER_URL).origin;
-        const existing = Array.isArray(config.gateway.controlUi.allowedOrigins)
-            ? config.gateway.controlUi.allowedOrigins
-            : [];
-        config.gateway.controlUi.allowedOrigins = Array.from(new Set([...existing, origin]));
-        console.log('Control UI allowed origin added: ' + origin);
+        console.log('Control UI worker origin: ' + origin);
     } catch (e) {
-        console.warn('WORKER_URL is not a valid URL; skipping allowed origin patch');
+        console.warn('WORKER_URL is not a valid URL; skipping origin log');
     }
-} else if (!Array.isArray(config.gateway.controlUi.allowedOrigins) || config.gateway.controlUi.allowedOrigins.length === 0) {
-    // Keep the upstream fallback for generic deployments that haven't set WORKER_URL yet.
-    config.gateway.controlUi.allowedOrigins = ['*'];
 }
+config.gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback = true;
 
 if (process.env.OPENCLAW_GATEWAY_TOKEN) {
     config.gateway.auth = config.gateway.auth || {};
