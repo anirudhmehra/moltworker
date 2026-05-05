@@ -18,9 +18,9 @@ RUN ARCH="$(dpkg --print-architecture)" \
     && npm --version
 
 # Install OpenClaw.
-# Pin to a cooled version that supports OpenCode Go auth.
+# Pin to the latest cooled stable release after the 2026.4.x rough-week regressions.
 RUN cd /tmp \
-    && npm install -g openclaw@2026.4.27 \
+    && npm install -g openclaw@2026.5.2 \
     && openclaw --version
 
 # Use /home/openclaw as the home directory instead of /root.
