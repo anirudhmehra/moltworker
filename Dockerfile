@@ -1,9 +1,9 @@
 FROM docker.io/cloudflare/sandbox:0.9.2
 
 # Install Node.js 22 (required by OpenClaw).
-# Pin to 22.17.1 because newer Node/npm combinations were flaky when
-# installing cooled OpenClaw builds inside the sandbox base image.
-ENV NODE_VERSION=22.17.1
+# Pin to 22.19.0 so newer OpenClaw releases and transitive deps like undici
+# meet their minimum Node engine requirement while staying on the Node 22 line.
+ENV NODE_VERSION=22.19.0
 RUN ARCH="$(dpkg --print-architecture)" \
     && case "${ARCH}" in \
          amd64) NODE_ARCH="x64" ;; \
@@ -19,8 +19,12 @@ RUN ARCH="$(dpkg --print-architecture)" \
 
 # Install OpenClaw.
 # Pin to the latest cooled stable release after the 2026.4.x rough-week regressions.
-RUN cd /tmp \
-    && npm install -g openclaw@2026.5.2 \
+# npm 10.9.3 bundled with newer Node 22 tarballs currently fails inside the
+# cloudflare/sandbox base image, so install via Corepack + pnpm instead.
+RUN corepack enable \
+    && pnpm add -g openclaw@2026.5.2 \
+         --config.global-bin-dir=/usr/local/bin \
+         --config.global-dir=/root/.pnpm-global \
     && openclaw --version
 
 # Use /home/openclaw as the home directory instead of /root.
